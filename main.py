@@ -17,7 +17,7 @@ async def handle_ping(request):
 
 async def start_dummy_server():
     app = web.Application()
-    app.add_routes([web.get('/', handle_ping)])
+    app.add_routes([web.get('/', handle_ping), web.head('/', handle_ping)])
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
