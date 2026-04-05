@@ -331,7 +331,6 @@ class MafiaGame(commands.Cog):
         if game.phase == GamePhase.NIGHT:
 
             # ── Step 1: Bot night actions ──────────────────────────────────
-            bot_night_msgs = []
             for bot in game.get_alive_bots():
                 target_id = decide_night_action(bot, game)
                 if target_id is None:
@@ -339,27 +338,13 @@ class MafiaGame(commands.Cog):
 
                 if bot.role == Role.MAFIA and game.mafia_target is None:
                     game.mafia_target = target_id
-                    msg = get_bot_night_message(bot)
-                    if msg:
-                        bot_night_msgs.append(msg)
-
                 elif bot.role == Role.DOCTOR and game.doctor_target is None:
                     game.doctor_target = target_id
-                    msg = get_bot_night_message(bot)
-                    if msg:
-                        bot_night_msgs.append(msg)
-
                 elif bot.role == Role.COP:
                     target_player = game.players.get(target_id)
                     if target_player:
                         result = "Mafia" if target_player.role == Role.MAFIA else "Town"
                         game.cop_results[target_id] = result
-                        msg = get_bot_night_message(bot)
-                        if msg:
-                            bot_night_msgs.append(msg)
-
-            if bot_night_msgs:
-                await interaction.channel.send("\n".join(bot_night_msgs))
 
             # ── Step 2: Resolve night outcomes ────────────────────────────
             killed = []
