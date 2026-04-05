@@ -4,11 +4,26 @@ from discord.ext import commands
 import os
 import asyncio
 import logging
+from aiohttp import web
 from core.config import DISCORD_TOKEN
 
 # Setup Logging for Production
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('discord')
+
+# --- Dummy Web Server for Render Free Tier ---
+async def handle_ping(request):
+    return web.Response(text="Bot is actively running!")
+
+async def start_dummy_server():
+    app = web.Application()
+    app.add_routes([web.get('/', handle_ping)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"Dummy Web Server running on port {port} to satisfy Render!")
 
 class HybridBot(commands.Bot):
     def __init__(self):
@@ -20,6 +35,9 @@ class HybridBot(commands.Bot):
     async def setup_hook(self):
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info("------")
+        
+        # Start dummy web server for Render health checks
+        await start_dummy_server()
         
         # Load cogs
         for filename in os.listdir('./cogs'):
