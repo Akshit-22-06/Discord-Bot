@@ -33,12 +33,11 @@ class HybridBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=commands.DefaultHelpCommand())
 
     async def setup_hook(self):
-        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
-        logger.info("------")
-        
+        # NOTE: self.user is None here — do NOT log it. Use on_ready for that.
+
         # Start dummy web server for Render health checks
         await start_dummy_server()
-        
+
         # Load cogs
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
@@ -57,16 +56,27 @@ class HybridBot(commands.Bot):
             else:
                 await interaction.response.send_message("⚠️ An error occurred while processing this command.", ephemeral=True)
 
-        # Sync app commands for slash commands
+        # --- Sync slash commands to Discord ---
+        # We do NOT use copy_global_to() — that copies stale global commands and can
+        # shadow newly added ones. Instead we sync directly to the guild (instant)
+        # or globally (up to 1 hour).
         from core.config import GUILD_ID
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info(f"Slash commands synced instantly to Guild ID: {GUILD_ID}")
+            synced = await self.tree.sync(guild=guild)
+            logger.info(f"Synced {len(synced)} slash commands to Guild {GUILD_ID}:")
+            for cmd in synced:
+                logger.info(f"  /{cmd.name}")
         else:
-            await self.tree.sync()
-            logger.info("Slash commands synced globally (may take up to 1 hour to update in Discord).")
+            synced = await self.tree.sync()
+            logger.info(f"Synced {len(synced)} slash commands globally (may take up to 1 hour).")
+            for cmd in synced:
+                logger.info(f"  /{cmd.name}")
+
+    async def on_ready(self):
+        logger.info(f"------")
+        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        logger.info(f"------")
 
 bot = HybridBot()
 
