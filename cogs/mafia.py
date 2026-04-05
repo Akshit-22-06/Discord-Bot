@@ -198,10 +198,26 @@ class MafiaGame(commands.Cog):
         )
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Autocomplete helper for players (bots & humans)
+    # ─────────────────────────────────────────────────────────────────────────
+    async def player_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        game = game_manager.get_game(interaction.channel_id)
+        if not game or game.phase == GamePhase.LOBBY:
+            return []
+            
+        alive = game.get_alive_players()
+        return [
+            app_commands.Choice(name=p.name, value=str(p.user_id))
+            for p in alive if current.lower() in p.name.lower()
+        ][:25]
+
+    # ─────────────────────────────────────────────────────────────────────────
     # /action  (human night actions)
     # ─────────────────────────────────────────────────────────────────────────
     @app_commands.command(name="action", description="Use your role's night action")
-    async def night_action(self, interaction: discord.Interaction, target: discord.Member):
+    @app_commands.describe(target="The player to target (type to search)")
+    @app_commands.autocomplete(target=player_autocomplete)
+    async def night_action(self, interaction: discord.Interaction, target: str):
         game = game_manager.get_game(interaction.channel_id)
 
         if not game or game.phase != GamePhase.NIGHT:
@@ -217,8 +233,14 @@ class MafiaGame(commands.Cog):
             )
             return
 
-        # Look for target among all game players (including bots by name)
-        target_player = game.players.get(target.id)
+        # Look for target among all game players
+        try:
+            target_id = int(target)
+            target_player = game.players.get(target_id)
+        except ValueError:
+            # If they typed the name manually instead of clicking the autocomplete
+            target_player = next((p for p in game.players.values() if p.name.lower() == target.lower()), None)
+            
         if not target_player or not target_player.is_alive:
             await interaction.response.send_message(
                 "Invalid target — they're not in the game or already dead.", ephemeral=True
@@ -226,20 +248,20 @@ class MafiaGame(commands.Cog):
             return
 
         if player.role == Role.MAFIA:
-            game.mafia_target = target.id
+            game.mafia_target = target_player.user_id
             await interaction.response.send_message(
-                f"🔪 You've chosen to kill **{target.display_name}** tonight.", ephemeral=True
+                f"🔪 You've chosen to kill **{target_player.name}** tonight.", ephemeral=True
             )
         elif player.role == Role.DOCTOR:
-            game.doctor_target = target.id
+            game.doctor_target = target_player.user_id
             await interaction.response.send_message(
-                f"💊 You've chosen to protect **{target.display_name}** tonight.", ephemeral=True
+                f"💊 You've chosen to protect **{target_player.name}** tonight.", ephemeral=True
             )
         elif player.role == Role.COP:
             result = "Mafia" if target_player.role == Role.MAFIA else "Town"
-            game.cop_results[target.id] = result
+            game.cop_results[target_player.user_id] = result
             await interaction.response.send_message(
-                f"🔍 You investigated **{target.display_name}**. "
+                f"🔍 You investigated **{target_player.name}**. "
                 f"Their allegiance is: **{result}**.",
                 ephemeral=True,
             )
@@ -252,7 +274,9 @@ class MafiaGame(commands.Cog):
     # /vote  (human day votes)
     # ─────────────────────────────────────────────────────────────────────────
     @app_commands.command(name="vote", description="Vote to lynch someone during the day")
-    async def vote(self, interaction: discord.Interaction, target: discord.Member):
+    @app_commands.describe(target="The player to vote for (type to search)")
+    @app_commands.autocomplete(target=player_autocomplete)
+    async def vote(self, interaction: discord.Interaction, target: str):
         game = game_manager.get_game(interaction.channel_id)
 
         if not game or game.phase != GamePhase.DAY:
@@ -266,14 +290,19 @@ class MafiaGame(commands.Cog):
             await interaction.response.send_message("You cannot vote.", ephemeral=True)
             return
 
-        target_player = game.players.get(target.id)
+        try:
+            target_id = int(target)
+            target_player = game.players.get(target_id)
+        except ValueError:
+            target_player = next((p for p in game.players.values() if p.name.lower() == target.lower()), None)
+            
         if not target_player or not target_player.is_alive:
             await interaction.response.send_message("Invalid target.", ephemeral=True)
             return
 
-        game.votes[interaction.user.id] = target.id
+        game.votes[interaction.user.id] = target_player.user_id
         await interaction.response.send_message(
-            f"🗳️ **{interaction.user.display_name}** has voted for **{target.display_name}**."
+            f"🗳️ **{interaction.user.display_name}** has voted for **{target_player.name}**."
         )
 
     # ─────────────────────────────────────────────────────────────────────────
