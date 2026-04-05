@@ -57,16 +57,20 @@ class HybridBot(commands.Bot):
                 await interaction.response.send_message("⚠️ An error occurred while processing this command.", ephemeral=True)
 
         # --- Sync slash commands to Discord ---
-        # We do NOT use copy_global_to() — that copies stale global commands and can
-        # shadow newly added ones. Instead we sync directly to the guild (instant)
-        # or globally (up to 1 hour).
+        # Guild sync  → instant, but only works in your own server (good for dev)
+        # Global sync → works on ALL servers, but takes up to 1 hour for new commands
+        # We do both: instant feedback on dev server + full coverage everywhere else.
         from core.config import GUILD_ID
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
-            synced = await self.tree.sync(guild=guild)
-            logger.info(f"Synced {len(synced)} slash commands to Guild {GUILD_ID}:")
-            for cmd in synced:
+            # 1) Guild sync — instant on your dev server
+            guild_synced = await self.tree.sync(guild=guild)
+            logger.info(f"Synced {len(guild_synced)} commands to dev guild {GUILD_ID} (instant):")
+            for cmd in guild_synced:
                 logger.info(f"  /{cmd.name}")
+            # 2) Global sync — makes commands available on every other server
+            global_synced = await self.tree.sync()
+            logger.info(f"Synced {len(global_synced)} commands globally (up to 1 hour for others).")
         else:
             synced = await self.tree.sync()
             logger.info(f"Synced {len(synced)} slash commands globally (may take up to 1 hour).")
