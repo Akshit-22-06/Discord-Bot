@@ -51,31 +51,18 @@ class HybridBot(commands.Bot):
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
             logger.error(f"Command Error triggered by {interaction.user}: {error}")
-            if interaction.response.is_done():
-                await interaction.followup.send("⚠️ An error occurred while processing this command.", ephemeral=True)
-            else:
-                await interaction.response.send_message("⚠️ An error occurred while processing this command.", ephemeral=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send("⚠️ An error occurred while processing this command.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("⚠️ An error occurred while processing this command.", ephemeral=True)
+            except discord.errors.HTTPException as e:
+                # Catch 429 HTML block errors from Cloudflare
+                logger.error(f"Failed to send error response to user due to Discord rate limits: {e}")
 
-        # --- Sync slash commands to Discord ---
-        # Guild sync  → instant, but only works in your own server (good for dev)
-        # Global sync → works on ALL servers, but takes up to 1 hour for new commands
-        # We do both: instant feedback on dev server + full coverage everywhere else.
-        from core.config import GUILD_ID
-        if GUILD_ID:
-            guild = discord.Object(id=int(GUILD_ID))
-            # 1) Guild sync — instant on your dev server
-            guild_synced = await self.tree.sync(guild=guild)
-            logger.info(f"Synced {len(guild_synced)} commands to dev guild {GUILD_ID} (instant):")
-            for cmd in guild_synced:
-                logger.info(f"  /{cmd.name}")
-            # 2) Global sync — makes commands available on every other server
-            global_synced = await self.tree.sync()
-            logger.info(f"Synced {len(global_synced)} commands globally (up to 1 hour for others).")
-        else:
-            synced = await self.tree.sync()
-            logger.info(f"Synced {len(synced)} slash commands globally (may take up to 1 hour).")
-            for cmd in synced:
-                logger.info(f"  /{cmd.name}")
+        # Note: We removed automatic command syncing here!
+        # Discord heavily rate limits bots that sync global commands on every boot.
+        # Use the `!sync` command below inside Discord to manually update your commands.
 
     async def on_ready(self):
         logger.info(f"------")
@@ -83,6 +70,17 @@ class HybridBot(commands.Bot):
         logger.info(f"------")
 
 bot = HybridBot()
+
+# --- Manual Sync Command ---
+# Type `!sync` in your Discord server to manually update slash commands.
+# This avoids Discord's strict automated rate limits.
+@bot.command()
+@commands.is_owner()
+async def sync(ctx):
+    await ctx.send("Syncing slash commands globally... (This may take a moment)")
+    synced = await bot.tree.sync()
+    await ctx.send(f"✅ Successfully synced {len(synced)} commands.")
+    logger.info(f"Manual Sync: Synced {len(synced)} slash commands.")
 
 if __name__ == "__main__":
     from database.db import init_db
