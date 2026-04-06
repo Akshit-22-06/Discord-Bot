@@ -10,6 +10,8 @@ Slash commands:
   /vote        — Vote to lynch someone during the day
   /next        — Advance the game phase; bots act automatically
   /status      — Show current game state
+  /mafia-info  — Beginner-friendly guide to playing Mafia
+  /mafia-demo  — Step-by-step tutorial of all commands
   /end         — Force-end the game
 """
 
@@ -512,6 +514,71 @@ class MafiaGame(commands.Cog):
                 inline=False,
             )
 
+        await interaction.response.send_message(embed=embed)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # /mafia-info
+    # ─────────────────────────────────────────────────────────────────────────
+    @app_commands.command(name="mafia-info", description="Beginner-friendly guide to the Mafia Game")
+    async def mafia_info(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="📖 Mafia Game Guide",
+            description="Welcome to Discord Mafia! A game of deception, deduction, and survival.",
+            color=discord.Color.from_rgb(88, 101, 242)
+        )
+        embed.add_field(
+            name="🎭 Roles",
+            value=(
+                "**🔪 Mafia:** Eliminate a town member each night.\n"
+                "**🔍 Cop:** Investigate a player each night to see if they are Town or Mafia.\n"
+                "**💊 Doctor:** Protect a player each night from being killed.\n"
+                "**🗳️ Villager:** No special night power. Find the Mafia through discussion and voting."
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🌘 Night Phase",
+            value="Mafia, Cop, and Doctor secretly use `/action <player>`. Villagers wait patiently. Once all actions are in, use `/next` to advance.",
+            inline=False
+        )
+        embed.add_field(
+            name="☀️ Day Phase",
+            value="The bot narrator announces what happened overnight. Players discuss and then use `/vote <player>` to vote to lynch someone. Use `/next` to tally votes and advance.",
+            inline=False
+        )
+        embed.set_footer(text="Use /mafia-demo to see all the commands in action!")
+        await interaction.response.send_message(embed=embed)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # /mafia-demo
+    # ─────────────────────────────────────────────────────────────────────────
+    @app_commands.command(name="mafia-demo", description="Demo of all the commands you need to play")
+    async def mafia_demo(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🎮 Mafia Bot Commands Demo",
+            description="Follow these steps to play a complete game of Mafia:",
+            color=discord.Color.from_rgb(88, 101, 242)
+        )
+        embed.add_field(
+            name="1️⃣ Lobby Prep",
+            value="• `/join`: Join the lobby yourself.\n• `/addbot count:3 personality:RANDOM`: Add AI bots to fill the seats.\n• `/status`: Check who is in the lobby.",
+            inline=False
+        )
+        embed.add_field(
+            name="2️⃣ Starting the Game",
+            value="• `/start`: Start the game once you have at least 3 players. Roles will be DM'd to everyone.",
+            inline=False
+        )
+        embed.add_field(
+            name="3️⃣ Playing the Game",
+            value="• `/action <player>`: Use your role's power (Night phase only).\n• `/vote <player>`: Cast your vote on a suspect (Day phase only).\n• `/next`: Fast-forward the game (AI players take their turn instantly).",
+            inline=False
+        )
+        embed.add_field(
+            name="4️⃣ Other Features",
+            value="• `/end`: Stops the active game if someone has to leave midway.",
+            inline=False
+        )
         await interaction.response.send_message(embed=embed)
 
     # ─────────────────────────────────────────────────────────────────────────
