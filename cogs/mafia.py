@@ -552,33 +552,55 @@ class MafiaGame(commands.Cog):
     # ─────────────────────────────────────────────────────────────────────────
     # /mafia-demo
     # ─────────────────────────────────────────────────────────────────────────
-    @app_commands.command(name="mafia-demo", description="Demo of all the commands you need to play")
+    @app_commands.command(name="mafia-demo", description="Step-by-step example of a full Mafia game")
     async def mafia_demo(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="🎮 Mafia Bot Commands Demo",
-            description="Follow these steps to play a complete game of Mafia:",
+            title="🎮 Mafia Full Game Walkthrough",
+            description="Here is how a typical game unfolds from start to finish:",
             color=discord.Color.from_rgb(88, 101, 242)
         )
         embed.add_field(
-            name="1️⃣ Lobby Prep",
-            value="• `/join`: Join the lobby yourself.\n• `/addbot count:3 personality:RANDOM`: Add AI bots to fill the seats.\n• `/status`: Check who is in the lobby.",
+            name="1️⃣ Lobby Phase (Gathering Players)",
+            value=(
+                "• **Alice** and **Bob** type `/join`.\n"
+                "• They need more players, so **Alice** types `/addbot count:2`.\n"
+                "• The lobby now has 4 players. **Alice** types `/start`.\n"
+                "• *The bot secretly DMs everyone their roles (Alice=Doctor, Bob=Town, Bot1=Mafia, Bot2=Cop).* 🤫\n"
+                "• The game automatically transitions to the **Night Phase**."
+            ),
             inline=False
         )
         embed.add_field(
-            name="2️⃣ Starting the Game",
-            value="• `/start`: Start the game once you have at least 3 players. Roles will be DM'd to everyone.",
+            name="2️⃣ Night Phase (Secret Actions)",
+            value=(
+                "• **Bot1** (Mafia) automatically targets **Bob** to kill.\n"
+                "• **Alice** (Doctor) types `/action Bob` to heal him.\n"
+                "• **Bot2** (Cop) automatically investigates **Alice** (and learns she is Town).\n"
+                "• **Bob** (Town) has no night power, so he just waits.\n"
+                "• Once everyone is done, someone types `/next` to advance the game."
+            ),
             inline=False
         )
         embed.add_field(
-            name="3️⃣ Playing the Game",
-            value="• `/action <player>`: Use your role's power (Night phase only).\n• `/vote <player>`: Cast your vote on a suspect (Day phase only).\n• `/next`: Fast-forward the game (AI players take their turn instantly).",
+            name="3️⃣ Day Phase (Discussion & Voting)",
+            value=(
+                "• ☀️ The narrator acts: *\"The sun rises... Nobody was killed last night!\"*\n"
+                "• Players debate in the text channel. The AI bots will also participate automatically!\n"
+                "• Suspicious of **Bot1**, **Alice** and **Bob** both type `/vote Bot1`.\n"
+                "• Someone types `/next` to tally the votes and end the day."
+            ),
             inline=False
         )
         embed.add_field(
-            name="4️⃣ Other Features",
-            value="• `/end`: Stops the active game if someone has to leave midway.",
+            name="4️⃣ The Result",
+            value=(
+                "• 📊 The bot posts the vote tally. **Bot1** has the most votes and is lynched.\n"
+                "• The bot reveals: *\"Bot1 was the Mafia.\"*\n"
+                "• Since all the Mafia have been eliminated, the bot announces: **🏆 Game Over! Town Wins!**"
+            ),
             inline=False
         )
+        embed.set_footer(text="Ready to play? Type /join to open your own lobby!")
         await interaction.response.send_message(embed=embed)
 
     # ─────────────────────────────────────────────────────────────────────────
