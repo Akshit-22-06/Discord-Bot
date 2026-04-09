@@ -1,4 +1,5 @@
 import random
+import math
 
 class Connect4Engine:
     EMPTY = 0
@@ -15,14 +16,13 @@ class Connect4Engine:
         self.is_draw = False
 
     def drop_piece(self, col: int) -> bool:
-        """Attempts to drop a piece into the specified column (0-indexed). Returns True if valid."""
+        
         if col < 0 or col >= self.cols:
             return False
             
         if self.winner or self.is_draw:
             return False
 
-        # Drop the piece to the lowest available row
         for r in range(self.rows - 1, -1, -1):
             if self.board[r][col] == self.EMPTY:
                 self.board[r][col] = self.current_turn
@@ -32,33 +32,28 @@ class Connect4Engine:
                 elif self.check_draw():
                     self.is_draw = True
                 else:
-                    # Swap turns
                     self.current_turn = self.P2 if self.current_turn == self.P1 else self.P1
                     
                 return True
                 
-        return False # Column is full
+        return False
 
     def check_win(self, piece: int) -> bool:
-        # Check horizontal
         for c in range(self.cols - 3):
             for r in range(self.rows):
                 if self.board[r][c] == piece and self.board[r][c+1] == piece and self.board[r][c+2] == piece and self.board[r][c+3] == piece:
                     return True
 
-        # Check vertical
         for c in range(self.cols):
             for r in range(self.rows - 3):
                 if self.board[r][c] == piece and self.board[r+1][c] == piece and self.board[r+2][c] == piece and self.board[r+3][c] == piece:
                     return True
 
-        # Check positive slope diagonals
         for c in range(self.cols - 3):
             for r in range(self.rows - 3):
                 if self.board[r][c] == piece and self.board[r+1][c+1] == piece and self.board[r+2][c+2] == piece and self.board[r+3][c+3] == piece:
                     return True
 
-        # Check negative slope diagonals
         for c in range(self.cols - 3):
             for r in range(3, self.rows):
                 if self.board[r][c] == piece and self.board[r-1][c+1] == piece and self.board[r-2][c+2] == piece and self.board[r-3][c+3] == piece:
@@ -73,14 +68,13 @@ class Connect4Engine:
         return True
 
     def render_emoji_board(self) -> str:
-        """Returns the board as a string of Discord emojis."""
+        
         emojis = {self.EMPTY: "⚪", self.P1: "🔴", self.P2: "🟡"}
         output = ""
         for r in range(self.rows):
             row_str = "".join([emojis[cell] for cell in self.board[r]])
             output += row_str + "\n"
             
-        # Add column numbers at the bottom
         output += "1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣"
         return output
 
@@ -91,49 +85,136 @@ class Connect4Engine:
                 valid_locations.append(col)
         return valid_locations
 
-    def simulate_drop(self, col: int, piece: int) -> bool:
-        """Simulates dropping a piece completely isolated to check win conditions."""
-        temp_r = -1
+    def get_next_open_row(self, col: int) -> int:
         for r in range(self.rows - 1, -1, -1):
             if self.board[r][col] == self.EMPTY:
-                self.board[r][col] = piece
-                temp_r = r
-                break
+                return r
+        return -1
+
+    def inner_evaluate_window(self, window: list, piece: int) -> int:
+        score = 0
+        opp_piece = self.P1 if piece == self.P2 else self.P2
+
+        if window.count(piece) == 4:
+            score += 100
+        elif window.count(piece) == 3 and window.count(self.EMPTY) == 1:
+            score += 5
+        elif window.count(piece) == 2 and window.count(self.EMPTY) == 2:
+            score += 2
+
+        if window.count(opp_piece) == 3 and window.count(self.EMPTY) == 1:
+            score -= 80
+
+        return score
+
+    def score_position(self, piece: int) -> int:
+        score = 0
+
+        center_array = [self.board[r][self.cols//2] for r in range(self.rows)]
+        center_count = center_array.count(piece)
+        score += center_count * 3
+
+        for r in range(self.rows):
+            row_array = self.board[r]
+            for c in range(self.cols - 3):
+                window = row_array[c:c+4]
+                score += self.inner_evaluate_window(window, piece)
+
+        for c in range(self.cols):
+            col_array = [self.board[r][c] for r in range(self.rows)]
+            for r in range(self.rows - 3):
+                window = col_array[r:r+4]
+                score += self.inner_evaluate_window(window, piece)
+
+        for r in range(self.rows - 3):
+            for c in range(self.cols - 3):
+                window = [self.board[r+i][c+i] for i in range(4)]
+                score += self.inner_evaluate_window(window, piece)
+
+        for r in range(self.rows - 3):
+            for c in range(self.cols - 3):
+                window = [self.board[r+3-i][c+i] for i in range(4)]
+                score += self.inner_evaluate_window(window, piece)
+
+        return score
+
+    def is_terminal_node(self) -> bool:
+        return self.check_win(self.P1) or self.check_win(self.P2) or len(self.get_valid_locations()) == 0
+
+    def minimax(self, depth: int, alpha: float, beta: float, maximizingPlayer: bool):
+        valid_locations = self.get_valid_locations()
+        is_terminal = self.is_terminal_node()
         
-        if temp_r == -1:
-            return False
-            
-        win = self.check_win(piece)
-        
-        # Revert
-        self.board[temp_r][col] = self.EMPTY
-        return win
+        bot_piece = self.current_turn
+        opp_piece = self.P1 if self.current_turn == self.P2 else self.P2
+
+        if depth == 0 or is_terminal:
+            if is_terminal:
+                if self.check_win(bot_piece):
+                    return (None, 100000000000000)
+                elif self.check_win(opp_piece):
+                    return (None, -10000000000000)
+                else:
+                    return (None, 0)
+            else:
+                return (None, self.score_position(bot_piece))
+
+        shuffled_locations = valid_locations.copy()
+        random.shuffle(shuffled_locations)
+
+        if maximizingPlayer:
+            value = -math.inf
+            best_col = shuffled_locations[0] if shuffled_locations else None
+            for col in shuffled_locations:
+                row = self.get_next_open_row(col)
+                if row == -1: continue
+                
+                self.board[row][col] = bot_piece
+                
+                new_score = self.minimax(depth-1, alpha, beta, False)[1]
+                
+                self.board[row][col] = self.EMPTY
+                
+                if new_score > value:
+                    value = new_score
+                    best_col = col
+                alpha = max(alpha, value)
+                if alpha >= beta:
+                    break
+            return best_col, value
+
+        else:
+            value = math.inf
+            best_col = shuffled_locations[0] if shuffled_locations else None
+            for col in shuffled_locations:
+                row = self.get_next_open_row(col)
+                if row == -1: continue
+                
+                self.board[row][col] = opp_piece
+                
+                new_score = self.minimax(depth-1, alpha, beta, True)[1]
+                
+                self.board[row][col] = self.EMPTY
+                
+                if new_score < value:
+                    value = new_score
+                    best_col = col
+                beta = min(beta, value)
+                if alpha >= beta:
+                    break
+            return best_col, value
 
     def bot_play(self) -> int:
-        """Determines best column and automatically plays it."""
+        
         valid_locations = self.get_valid_locations()
         if not valid_locations:
             return -1
 
-        # 1. Win if possible
-        for col in valid_locations:
-            if self.simulate_drop(col, self.current_turn):
-                self.drop_piece(col)
-                return col
+        col, minimax_score = self.minimax(5, -math.inf, math.inf, True)
 
-        # 2. Block the opponent if they are about to win
-        opponent_piece = self.P1 if self.current_turn == self.P2 else self.P2
-        for col in valid_locations:
-            if self.simulate_drop(col, opponent_piece):
-                self.drop_piece(col)
-                return col
+        if col is None or col not in valid_locations:
+            col = random.choice(valid_locations)
 
-        # 3. Bias strictly towards the center
-        if 3 in valid_locations and random.random() > 0.2:
-            self.drop_piece(3)
-            return 3
-
-        # 4. Fallback random
-        col = random.choice(valid_locations)
         self.drop_piece(col)
         return col
+

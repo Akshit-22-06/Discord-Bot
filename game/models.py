@@ -8,10 +8,10 @@ class Role(Enum):
     DOCTOR = "Doctor"
 
 class BotPersonality(Enum):
-    AGGRESSIVE = "Aggressive"  # votes quickly and loudly
-    PARANOID   = "Paranoid"   # trusts no one, unpredictable
-    PASSIVE    = "Passive"    # quiet, rarely votes
-    DETECTIVE  = "Detective"  # logical, uses deduction
+    AGGRESSIVE = "Aggressive"
+    PARANOID   = "Paranoid"
+    PASSIVE    = "Passive"
+    DETECTIVE  = "Detective"
 
 class GamePhase(Enum):
     LOBBY = "Lobby"
@@ -29,7 +29,7 @@ class Player:
         self.is_bot = False
 
 class BotPlayer(Player):
-    """An AI-controlled player with a specific personality."""
+    
     def __init__(self, user_id: int, name: str, personality: BotPersonality):
         super().__init__(user_id, name)
         self.is_bot = True
@@ -41,14 +41,13 @@ class GameState:
         self.players: dict[int, Player] = {}
         self.phase = GamePhase.LOBBY
         self.day_number = 0
-        self._bot_id_counter = -1  # Bots use negative IDs (never clash with Discord user IDs)
+        self._bot_id_counter = -1
 
-        # State trackers for current phase
-        self.votes = {}           # voter_id -> target_id (during day)
+        self.votes = {}
         self.mafia_target = None
         self.doctor_target = None
         self.cop_target = None
-        self.cop_results: dict[int, str] = {}  # target_id -> "Mafia"|"Town"
+        self.cop_results: dict[int, str] = {}
 
     def add_player(self, user_id: int, name: str) -> bool:
         if self.phase != GamePhase.LOBBY:
@@ -59,7 +58,7 @@ class GameState:
         return False
 
     def add_bot(self, name: str, personality: 'BotPersonality') -> 'BotPlayer':
-        """Add an AI bot to the lobby with a unique negative ID."""
+        
         bot_id = self._bot_id_counter
         self._bot_id_counter -= 1
         bot = BotPlayer(bot_id, name, personality)
@@ -79,7 +78,6 @@ class GameState:
         random.shuffle(player_list)
         
         num_players = len(player_list)
-        # Simplified ratio: 1 Mafia per 3 players, 1 Cop if >= 4, 1 Doctor if >= 5
         num_mafia = max(1, num_players // 3)
         
         roles_pool = [Role.MAFIA] * num_mafia
