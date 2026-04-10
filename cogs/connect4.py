@@ -28,12 +28,15 @@ class Connect4Controls(discord.ui.View):
                 await interaction.response.send_message("It's not your turn!", ephemeral=True)
                 return
                 
+            # Defer the interaction immediately to give the bot up to 15 minutes to calculate
+            await interaction.response.defer()
+                
             success = self.game.drop_piece(col)
             if not success:
-                await interaction.response.send_message("That column is full!", ephemeral=True)
+                await interaction.followup.send("That column is full!", ephemeral=True)
                 return
 
-            # If PvE mode, bot takes its turn instantly
+            # If PvE mode, bot takes its turn calculating
             if self.is_pve and not self.game.winner and not self.game.is_draw:
                 self.game.bot_play()
 
@@ -43,19 +46,19 @@ class Connect4Controls(discord.ui.View):
                 content = f"🏆 **Game Over!** {winner_user.mention} wins!\n\n{self.game.render_emoji_board()}"
                 for child in self.children:
                     child.disabled = True
-                await interaction.response.edit_message(content=content, view=self)
+                await interaction.edit_original_response(content=content, view=self)
                 self.stop()
             elif self.game.is_draw:
                 content = f"🤝 **It's a Draw!**\n\n{self.game.render_emoji_board()}"
                 for child in self.children:
                     child.disabled = True
-                await interaction.response.edit_message(content=content, view=self)
+                await interaction.edit_original_response(content=content, view=self)
                 self.stop()
             else:
                 next_player = self.p1 if self.game.current_turn == self.game.P1 else self.p2
                 emoji = "🔴" if self.game.current_turn == self.game.P1 else "🟡"
                 content = f"🎮 **Connect 4**\n{next_player.mention}'s Turn ({emoji})\n\n{self.game.render_emoji_board()}"
-                await interaction.response.edit_message(content=content, view=self)
+                await interaction.edit_original_response(content=content, view=self)
                 
         return button_callback
 
