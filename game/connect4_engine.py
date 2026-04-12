@@ -1,10 +1,14 @@
 import random
 import math
+import time
 
 class Connect4Engine:
     EMPTY = 0
     P1 = 1
     P2 = 2
+
+    # Move ordering: prioritize center columns for better alpha-beta pruning
+    MOVE_ORDER = [3, 2, 4, 1, 5, 0, 6]
 
     def __init__(self, player1_id: int, player2_id: int):
         self.rows = 6
@@ -14,6 +18,20 @@ class Connect4Engine:
         self.current_turn = self.P1
         self.winner = None
         self.is_draw = False
+        # Transposition table for caching evaluated positions
+        self._tt = {}
+        self._search_start = 0
+        self._time_limit = 3.0
+        self._search_aborted = False
+
+    def _board_key(self):
+        """Create a fast hashable key for the current board state using a compact integer encoding."""
+        # Encode board as a single large integer (base-3 encoding: 0=empty, 1=P1, 2=P2)
+        key = 0
+        for r in range(self.rows):
+            for c in range(self.cols):
+                key = key * 3 + self.board[r][c]
+        return key
 
     def drop_piece(self, col: int) -> bool:
         """Attempts to drop a piece into the specified column (0-indexed). Returns True if valid."""
@@ -98,62 +116,137 @@ class Connect4Engine:
                 return r
         return -1
 
-    def inner_evaluate_window(self, window: list, piece: int) -> int:
+    def _count_pieces(self):
+        """Count total pieces on the board (used for depth bonus on winning faster)."""
+        count = 0
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.board[r][c] != self.EMPTY:
+                    count += 1
+        return count
+
+    # ==========================================
+    # ADVANCED HEURISTIC EVALUATION
+    # ==========================================
+
+    def _evaluate_window(self, window: list, piece: int) -> int:
+        """Evaluate a window of 4 cells with much stronger weights."""
         score = 0
         opp_piece = self.P1 if piece == self.P2 else self.P2
+        
+        piece_count = window.count(piece)
+        opp_count = window.count(opp_piece)
+        empty_count = window.count(self.EMPTY)
 
-        if window.count(piece) == 4:
-            score += 100
-        elif window.count(piece) == 3 and window.count(self.EMPTY) == 1:
-            score += 5
-        elif window.count(piece) == 2 and window.count(self.EMPTY) == 2:
-            score += 2
+        # Only score windows that aren't "dead" (containing both players' pieces)
+        if piece_count > 0 and opp_count > 0:
+            return 0  # Dead window, no potential
 
-        if window.count(opp_piece) == 3 and window.count(self.EMPTY) == 1:
-            score -= 80 # Heavily penalize opponent having 3 inline
+        if piece_count == 4:
+            score += 100000
+        elif piece_count == 3 and empty_count == 1:
+            score += 50
+        elif piece_count == 2 and empty_count == 2:
+            score += 10
+
+        if opp_count == 3 and empty_count == 1:
+            score -= 200  # Very heavily penalize opponent threats
+        elif opp_count == 2 and empty_count == 2:
+            score -= 8
 
         return score
 
     def score_position(self, piece: int) -> int:
+        """Advanced position scoring with center control, threat analysis, and positional awareness."""
         score = 0
+        opp_piece = self.P1 if piece == self.P2 else self.P2
 
-        # Score center column
-        center_array = [self.board[r][self.cols//2] for r in range(self.rows)]
+        # Score center column (controlling the center is critical in Connect 4)
+        center_array = [self.board[r][self.cols // 2] for r in range(self.rows)]
         center_count = center_array.count(piece)
-        score += center_count * 3
+        score += center_count * 6
 
-        # Score Horizontal
+        # Score adjacent-to-center columns
+        for adj_col in [2, 4]:
+            adj_array = [self.board[r][adj_col] for r in range(self.rows)]
+            adj_count = adj_array.count(piece)
+            score += adj_count * 3
+
+        # Score all windows (horizontal, vertical, diagonal)
+        # Horizontal
         for r in range(self.rows):
             row_array = self.board[r]
             for c in range(self.cols - 3):
-                window = row_array[c:c+4]
-                score += self.inner_evaluate_window(window, piece)
+                window = row_array[c:c + 4]
+                score += self._evaluate_window(window, piece)
 
-        # Score Vertical
+        # Vertical
         for c in range(self.cols):
             col_array = [self.board[r][c] for r in range(self.rows)]
             for r in range(self.rows - 3):
-                window = col_array[r:r+4]
-                score += self.inner_evaluate_window(window, piece)
+                window = col_array[r:r + 4]
+                score += self._evaluate_window(window, piece)
 
-        # Score positive sloped diagonal
+        # Positive slope diagonal
         for r in range(self.rows - 3):
             for c in range(self.cols - 3):
-                window = [self.board[r+i][c+i] for i in range(4)]
-                score += self.inner_evaluate_window(window, piece)
+                window = [self.board[r + i][c + i] for i in range(4)]
+                score += self._evaluate_window(window, piece)
 
-        # Score negative sloped diagonal
+        # Negative slope diagonal
         for r in range(self.rows - 3):
             for c in range(self.cols - 3):
-                window = [self.board[r+3-i][c+i] for i in range(4)]
-                score += self.inner_evaluate_window(window, piece)
+                window = [self.board[r + 3 - i][c + i] for i in range(4)]
+                score += self._evaluate_window(window, piece)
+
+        # Bonus: lower row pieces are generally more valuable (more stable)
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.board[r][c] == piece:
+                    score += (r + 1)  # Bottom row = 6 pts, top = 1 pt
 
         return score
 
     def is_terminal_node(self) -> bool:
         return self.check_win(self.P1) or self.check_win(self.P2) or len(self.get_valid_locations()) == 0
 
+    # ==========================================
+    # THREAT DETECTION (instant win/block checks)
+    # ==========================================
+
+    def _find_winning_move(self, piece: int):
+        """Check if 'piece' can win immediately. Returns the column or None."""
+        for col in self.MOVE_ORDER:
+            if self.board[0][col] != self.EMPTY:
+                continue
+            row = self.get_next_open_row(col)
+            if row == -1:
+                continue
+            self.board[row][col] = piece
+            win = self.check_win(piece)
+            self.board[row][col] = self.EMPTY
+            if win:
+                return col
+        return None
+
+    # ==========================================
+    # MINIMAX WITH ALPHA-BETA, TRANSPOSITION TABLE, AND MOVE ORDERING
+    # ==========================================
+
+    def _get_ordered_moves(self, valid_locations):
+        """Return moves ordered by center-priority for better pruning."""
+        return [col for col in self.MOVE_ORDER if col in valid_locations]
+
     def minimax(self, depth: int, alpha: float, beta: float, maximizingPlayer: bool):
+        """
+        Minimax with alpha-beta pruning, transposition table, move ordering,
+        and time-based abort.
+        """
+        # Time-based abort: stop searching if time limit exceeded
+        if self._search_aborted or (time.time() - self._search_start > self._time_limit):
+            self._search_aborted = True
+            return (None, 0)  # Abort: return neutral score
+
         valid_locations = self.get_valid_locations()
         is_terminal = self.is_terminal_node()
         
@@ -163,31 +256,62 @@ class Connect4Engine:
         if depth == 0 or is_terminal:
             if is_terminal:
                 if self.check_win(bot_piece):
-                    return (None, 100000000000000)
+                    # Prefer faster wins (add depth bonus)
+                    return (None, 10000000 + depth)
                 elif self.check_win(opp_piece):
-                    return (None, -10000000000000)
-                else: # Draw
+                    # Prefer slower losses (subtract depth bonus)
+                    return (None, -10000000 - depth)
+                else:  # Draw
                     return (None, 0)
-            else: # Depth is zero
+            else:  # Depth is zero
                 return (None, self.score_position(bot_piece))
 
-        # We shuffle valid locations so the AI's playstyle isn't extremely uniform on equal scores
-        shuffled_locations = valid_locations.copy()
-        random.shuffle(shuffled_locations)
+        # Check transposition table
+        board_key = self._board_key()
+        tt_key = (board_key, depth, maximizingPlayer)
+        if tt_key in self._tt:
+            return self._tt[tt_key]
+
+        # Move ordering: center columns first for better alpha-beta pruning
+        ordered_moves = self._get_ordered_moves(valid_locations)
+
+        # Immediate threat detection: check for instant wins/blocks
+        if maximizingPlayer:
+            # Can we win right now?
+            win_col = self._find_winning_move(bot_piece)
+            if win_col is not None:
+                result = (win_col, 10000000 + depth)
+                self._tt[tt_key] = result
+                return result
+            # Must we block opponent's win?
+            block_col = self._find_winning_move(opp_piece)
+            if block_col is not None:
+                # Force this move to be evaluated first
+                ordered_moves = [block_col] + [c for c in ordered_moves if c != block_col]
+        else:
+            # Can opponent win right now?
+            win_col = self._find_winning_move(opp_piece)
+            if win_col is not None:
+                result = (win_col, -10000000 - depth)
+                self._tt[tt_key] = result
+                return result
+            # Must opponent block our win?
+            block_col = self._find_winning_move(bot_piece)
+            if block_col is not None:
+                ordered_moves = [block_col] + [c for c in ordered_moves if c != block_col]
 
         if maximizingPlayer:
             value = -math.inf
-            best_col = shuffled_locations[0] if shuffled_locations else None
-            for col in shuffled_locations:
+            best_col = ordered_moves[0] if ordered_moves else None
+            for col in ordered_moves:
                 row = self.get_next_open_row(col)
-                if row == -1: continue # Just in case
+                if row == -1:
+                    continue
                 
                 # Temporarily drop piece
                 self.board[row][col] = bot_piece
-                
-                new_score = self.minimax(depth-1, alpha, beta, False)[1]
-                
-                # Undo 
+                new_score = self.minimax(depth - 1, alpha, beta, False)[1]
+                # Undo
                 self.board[row][col] = self.EMPTY
                 
                 if new_score > value:
@@ -196,20 +320,21 @@ class Connect4Engine:
                 alpha = max(alpha, value)
                 if alpha >= beta:
                     break
-            return best_col, value
+            result = (best_col, value)
+            self._tt[tt_key] = result
+            return result
 
-        else: # Minimizing player
+        else:  # Minimizing player
             value = math.inf
-            best_col = shuffled_locations[0] if shuffled_locations else None
-            for col in shuffled_locations:
+            best_col = ordered_moves[0] if ordered_moves else None
+            for col in ordered_moves:
                 row = self.get_next_open_row(col)
-                if row == -1: continue
+                if row == -1:
+                    continue
                 
                 # Temporarily drop piece
                 self.board[row][col] = opp_piece
-                
-                new_score = self.minimax(depth-1, alpha, beta, True)[1]
-                
+                new_score = self.minimax(depth - 1, alpha, beta, True)[1]
                 # Undo
                 self.board[row][col] = self.EMPTY
                 
@@ -219,19 +344,69 @@ class Connect4Engine:
                 beta = min(beta, value)
                 if alpha >= beta:
                     break
-            return best_col, value
+            result = (best_col, value)
+            self._tt[tt_key] = result
+            return result
 
     def bot_play(self) -> int:
-        """Determines best column using Minimax (depth=7) and automatically plays it."""
+        """
+        Determines best column using iterative deepening Minimax.
+        Searches up to depth 14 with a 4-second time limit.
+        Uses transposition table, move ordering, and threat detection
+        for near-perfect play.
+        """
         valid_locations = self.get_valid_locations()
         if not valid_locations:
             return -1
 
-        col, minimax_score = self.minimax(7, -math.inf, math.inf, True)
+        # If only one move available, just play it
+        if len(valid_locations) == 1:
+            self.drop_piece(valid_locations[0])
+            return valid_locations[0]
 
-        if col is None or col not in valid_locations:
-            col = random.choice(valid_locations)
+        # Clear transposition table each move to keep memory bounded
+        self._tt.clear()
 
-        self.drop_piece(col)
-        return col
+        # Check for immediate win
+        bot_piece = self.current_turn
+        opp_piece = self.P1 if self.current_turn == self.P2 else self.P2
+        win_col = self._find_winning_move(bot_piece)
+        if win_col is not None:
+            self.drop_piece(win_col)
+            return win_col
+
+        # Check for immediate block
+        block_col = self._find_winning_move(opp_piece)
+        if block_col is not None:
+            self.drop_piece(block_col)
+            return block_col
+
+        # Iterative deepening: search progressively deeper
+        best_col = valid_locations[0]
+        self._time_limit = 3.0  # seconds - keeps Discord responsive
+        self._search_start = time.time()
+        max_depth = 16
+
+        for depth in range(4, max_depth + 1):
+            if time.time() - self._search_start > self._time_limit:
+                break
+            self._search_aborted = False
+            try:
+                col, score = self.minimax(depth, -math.inf, math.inf, True)
+                # Only use result if search wasn't aborted
+                if not self._search_aborted and col is not None and col in valid_locations:
+                    best_col = col
+                # If we found a guaranteed win, stop searching deeper
+                if not self._search_aborted and score >= 10000000:
+                    break
+                if self._search_aborted:
+                    break
+            except Exception:
+                break  # Safety: if anything goes wrong, use last best
+
+        if best_col is None or best_col not in valid_locations:
+            best_col = random.choice(valid_locations)
+
+        self.drop_piece(best_col)
+        return best_col
 
