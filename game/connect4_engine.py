@@ -1,10 +1,13 @@
 import random
 import math
+import time
 
 class Connect4Engine:
     EMPTY = 0
     P1 = 1
     P2 = 2
+
+    MOVE_ORDER = [3, 2, 4, 1, 5, 0, 6]
 
     def __init__(self, player1_id: int, player2_id: int):
         self.rows = 6
@@ -14,6 +17,18 @@ class Connect4Engine:
         self.current_turn = self.P1
         self.winner = None
         self.is_draw = False
+        self._tt = {}
+        self._search_start = 0
+        self._time_limit = 3.0
+        self._search_aborted = False
+
+    def _board_key(self):
+        
+        key = 0
+        for r in range(self.rows):
+            for c in range(self.cols):
+                key = key * 3 + self.board[r][c]
+        return key
 
     def drop_piece(self, col: int) -> bool:
         
@@ -91,57 +106,112 @@ class Connect4Engine:
                 return r
         return -1
 
-    def inner_evaluate_window(self, window: list, piece: int) -> int:
+    def _count_pieces(self):
+        
+        count = 0
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.board[r][c] != self.EMPTY:
+                    count += 1
+        return count
+
+    def _evaluate_window(self, window: list, piece: int) -> int:
+        
         score = 0
         opp_piece = self.P1 if piece == self.P2 else self.P2
+        
+        piece_count = window.count(piece)
+        opp_count = window.count(opp_piece)
+        empty_count = window.count(self.EMPTY)
 
-        if window.count(piece) == 4:
-            score += 100
-        elif window.count(piece) == 3 and window.count(self.EMPTY) == 1:
-            score += 5
-        elif window.count(piece) == 2 and window.count(self.EMPTY) == 2:
-            score += 2
+        if piece_count > 0 and opp_count > 0:
+            return 0
 
-        if window.count(opp_piece) == 3 and window.count(self.EMPTY) == 1:
-            score -= 80
+        if piece_count == 4:
+            score += 100000
+        elif piece_count == 3 and empty_count == 1:
+            score += 50
+        elif piece_count == 2 and empty_count == 2:
+            score += 10
+
+        if opp_count == 3 and empty_count == 1:
+            score -= 200
+        elif opp_count == 2 and empty_count == 2:
+            score -= 8
 
         return score
 
     def score_position(self, piece: int) -> int:
+        
         score = 0
+        opp_piece = self.P1 if piece == self.P2 else self.P2
 
-        center_array = [self.board[r][self.cols//2] for r in range(self.rows)]
+        center_array = [self.board[r][self.cols // 2] for r in range(self.rows)]
         center_count = center_array.count(piece)
-        score += center_count * 3
+        score += center_count * 6
+
+        for adj_col in [2, 4]:
+            adj_array = [self.board[r][adj_col] for r in range(self.rows)]
+            adj_count = adj_array.count(piece)
+            score += adj_count * 3
 
         for r in range(self.rows):
             row_array = self.board[r]
             for c in range(self.cols - 3):
-                window = row_array[c:c+4]
-                score += self.inner_evaluate_window(window, piece)
+                window = row_array[c:c + 4]
+                score += self._evaluate_window(window, piece)
 
         for c in range(self.cols):
             col_array = [self.board[r][c] for r in range(self.rows)]
             for r in range(self.rows - 3):
-                window = col_array[r:r+4]
-                score += self.inner_evaluate_window(window, piece)
+                window = col_array[r:r + 4]
+                score += self._evaluate_window(window, piece)
 
         for r in range(self.rows - 3):
             for c in range(self.cols - 3):
-                window = [self.board[r+i][c+i] for i in range(4)]
-                score += self.inner_evaluate_window(window, piece)
+                window = [self.board[r + i][c + i] for i in range(4)]
+                score += self._evaluate_window(window, piece)
 
         for r in range(self.rows - 3):
             for c in range(self.cols - 3):
-                window = [self.board[r+3-i][c+i] for i in range(4)]
-                score += self.inner_evaluate_window(window, piece)
+                window = [self.board[r + 3 - i][c + i] for i in range(4)]
+                score += self._evaluate_window(window, piece)
+
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.board[r][c] == piece:
+                    score += (r + 1)
 
         return score
 
     def is_terminal_node(self) -> bool:
         return self.check_win(self.P1) or self.check_win(self.P2) or len(self.get_valid_locations()) == 0
 
+    def _find_winning_move(self, piece: int):
+        
+        for col in self.MOVE_ORDER:
+            if self.board[0][col] != self.EMPTY:
+                continue
+            row = self.get_next_open_row(col)
+            if row == -1:
+                continue
+            self.board[row][col] = piece
+            win = self.check_win(piece)
+            self.board[row][col] = self.EMPTY
+            if win:
+                return col
+        return None
+
+    def _get_ordered_moves(self, valid_locations):
+        
+        return [col for col in self.MOVE_ORDER if col in valid_locations]
+
     def minimax(self, depth: int, alpha: float, beta: float, maximizingPlayer: bool):
+        
+        if self._search_aborted or (time.time() - self._search_start > self._time_limit):
+            self._search_aborted = True
+            return (None, 0)
+
         valid_locations = self.get_valid_locations()
         is_terminal = self.is_terminal_node()
         
@@ -151,28 +221,50 @@ class Connect4Engine:
         if depth == 0 or is_terminal:
             if is_terminal:
                 if self.check_win(bot_piece):
-                    return (None, 100000000000000)
+                    return (None, 10000000 + depth)
                 elif self.check_win(opp_piece):
-                    return (None, -10000000000000)
+                    return (None, -10000000 - depth)
                 else:
                     return (None, 0)
             else:
                 return (None, self.score_position(bot_piece))
 
-        shuffled_locations = valid_locations.copy()
-        random.shuffle(shuffled_locations)
+        board_key = self._board_key()
+        tt_key = (board_key, depth, maximizingPlayer)
+        if tt_key in self._tt:
+            return self._tt[tt_key]
+
+        ordered_moves = self._get_ordered_moves(valid_locations)
+
+        if maximizingPlayer:
+            win_col = self._find_winning_move(bot_piece)
+            if win_col is not None:
+                result = (win_col, 10000000 + depth)
+                self._tt[tt_key] = result
+                return result
+            block_col = self._find_winning_move(opp_piece)
+            if block_col is not None:
+                ordered_moves = [block_col] + [c for c in ordered_moves if c != block_col]
+        else:
+            win_col = self._find_winning_move(opp_piece)
+            if win_col is not None:
+                result = (win_col, -10000000 - depth)
+                self._tt[tt_key] = result
+                return result
+            block_col = self._find_winning_move(bot_piece)
+            if block_col is not None:
+                ordered_moves = [block_col] + [c for c in ordered_moves if c != block_col]
 
         if maximizingPlayer:
             value = -math.inf
-            best_col = shuffled_locations[0] if shuffled_locations else None
-            for col in shuffled_locations:
+            best_col = ordered_moves[0] if ordered_moves else None
+            for col in ordered_moves:
                 row = self.get_next_open_row(col)
-                if row == -1: continue
+                if row == -1:
+                    continue
                 
                 self.board[row][col] = bot_piece
-                
-                new_score = self.minimax(depth-1, alpha, beta, False)[1]
-                
+                new_score = self.minimax(depth - 1, alpha, beta, False)[1]
                 self.board[row][col] = self.EMPTY
                 
                 if new_score > value:
@@ -181,19 +273,20 @@ class Connect4Engine:
                 alpha = max(alpha, value)
                 if alpha >= beta:
                     break
-            return best_col, value
+            result = (best_col, value)
+            self._tt[tt_key] = result
+            return result
 
         else:
             value = math.inf
-            best_col = shuffled_locations[0] if shuffled_locations else None
-            for col in shuffled_locations:
+            best_col = ordered_moves[0] if ordered_moves else None
+            for col in ordered_moves:
                 row = self.get_next_open_row(col)
-                if row == -1: continue
+                if row == -1:
+                    continue
                 
                 self.board[row][col] = opp_piece
-                
-                new_score = self.minimax(depth-1, alpha, beta, True)[1]
-                
+                new_score = self.minimax(depth - 1, alpha, beta, True)[1]
                 self.board[row][col] = self.EMPTY
                 
                 if new_score < value:
@@ -202,7 +295,9 @@ class Connect4Engine:
                 beta = min(beta, value)
                 if alpha >= beta:
                     break
-            return best_col, value
+            result = (best_col, value)
+            self._tt[tt_key] = result
+            return result
 
     def bot_play(self) -> int:
         
@@ -210,11 +305,47 @@ class Connect4Engine:
         if not valid_locations:
             return -1
 
-        col, minimax_score = self.minimax(7, -math.inf, math.inf, True)
+        if len(valid_locations) == 1:
+            self.drop_piece(valid_locations[0])
+            return valid_locations[0]
 
-        if col is None or col not in valid_locations:
-            col = random.choice(valid_locations)
+        self._tt.clear()
 
-        self.drop_piece(col)
-        return col
+        bot_piece = self.current_turn
+        opp_piece = self.P1 if self.current_turn == self.P2 else self.P2
+        win_col = self._find_winning_move(bot_piece)
+        if win_col is not None:
+            self.drop_piece(win_col)
+            return win_col
+
+        block_col = self._find_winning_move(opp_piece)
+        if block_col is not None:
+            self.drop_piece(block_col)
+            return block_col
+
+        best_col = valid_locations[0]
+        self._time_limit = 3.0
+        self._search_start = time.time()
+        max_depth = 16
+
+        for depth in range(4, max_depth + 1):
+            if time.time() - self._search_start > self._time_limit:
+                break
+            self._search_aborted = False
+            try:
+                col, score = self.minimax(depth, -math.inf, math.inf, True)
+                if not self._search_aborted and col is not None and col in valid_locations:
+                    best_col = col
+                if not self._search_aborted and score >= 10000000:
+                    break
+                if self._search_aborted:
+                    break
+            except Exception:
+                break
+
+        if best_col is None or best_col not in valid_locations:
+            best_col = random.choice(valid_locations)
+
+        self.drop_piece(best_col)
+        return best_col
 
