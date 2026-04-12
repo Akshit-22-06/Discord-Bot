@@ -210,7 +210,7 @@ class Connect4Engine:
         if not valid_locations:
             return -1
 
-        col, minimax_score = self.minimax(5, -math.inf, math.inf, True)
+        col, minimax_score = self.minimax(7, -math.inf, math.inf, True)
 
         if col is None or col not in valid_locations:
             col = random.choice(valid_locations)
