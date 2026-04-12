@@ -222,12 +222,12 @@ class Connect4Engine:
             return best_col, value
 
     def bot_play(self) -> int:
-        """Determines best column using Minimax (depth=5) and automatically plays it."""
+        """Determines best column using Minimax (depth=7) and automatically plays it."""
         valid_locations = self.get_valid_locations()
         if not valid_locations:
             return -1
 
-        col, minimax_score = self.minimax(5, -math.inf, math.inf, True)
+        col, minimax_score = self.minimax(7, -math.inf, math.inf, True)
 
         if col is None or col not in valid_locations:
             col = random.choice(valid_locations)
