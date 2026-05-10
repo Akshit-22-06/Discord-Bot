@@ -74,3 +74,9 @@ def clear_movies(guild_id: int):
     session.query(Movie).filter_by(guild_id=guild_id).delete()
     session.commit()
     session.close()
+
+def remove_movie(movie_id: int):
+    session = SessionLocal()
+    session.query(Movie).filter_by(id=movie_id).delete()
+    session.commit()
+    session.close()

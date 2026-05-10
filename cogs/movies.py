@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import asyncio
 import random
-from database.db import add_movie, get_movies, clear_movies
+from database.db import add_movie, get_movies, clear_movies, remove_movie
 
 # Create a group for the movie commands
 class MovieCog(commands.Cog):
@@ -78,9 +78,15 @@ class MovieCog(commands.Cog):
         spin_cycles = 10
         delay = 0.05
         friction = 1.25
+        last_movie = None
         
         for i in range(spin_cycles - 1):
             random_movie = random.choice(movies)
+            # Prevent duplicate visual frames if there are at least 2 movies
+            while len(movies) > 1 and random_movie == last_movie:
+                random_movie = random.choice(movies)
+            last_movie = random_movie
+            
             await msg.edit(content=f"🎰 **Spinning the Movie Roulette...**\n\n> 🔄 *{random_movie['title']}*")
             await asyncio.sleep(delay)
             delay *= friction # Slow down the spin gradually
@@ -89,6 +95,9 @@ class MovieCog(commands.Cog):
         votes = winner.get('votes', 1)
         vote_text = "vote" if votes == 1 else "votes"
         await msg.edit(content=f"🎯 **The wheel has stopped!**\n\n🍿 **Tonight's Movie:**\n# {winner['title']}\n*(Suggested by {winner['added_by']}) - Won with {votes} {vote_text}!*")
+        
+        # Remove the winner from the pool so it can't win again
+        remove_movie(winner['id'])
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(MovieCog(bot))
