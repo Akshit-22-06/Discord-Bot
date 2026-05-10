@@ -52,6 +52,29 @@ class MovieCog(commands.Cog):
         clear_movies(guild_id)
         await interaction.response.send_message("🗑️ **Movie pool cleared!** Ready for a new movie night.")
 
+    @movie_group.command(name="info", description="Get info about a movie currently in the pool")
+    async def info(self, interaction: discord.Interaction, title: str):
+        guild_id = interaction.guild_id
+        if not guild_id:
+            return
+            
+        movies = get_movies(guild_id)
+        # Find the movie case-insensitively
+        movie = next((m for m in movies if m['title'].lower() == title.lower()), None)
+        
+        if not movie:
+            await interaction.response.send_message(f"❌ Could not find **{title}** in the current movie pool.", ephemeral=True)
+            return
+            
+        votes = movie.get('votes', 1)
+        vote_text = "vote" if votes == 1 else "votes"
+        
+        embed = discord.Embed(title=f"🍿 {movie['title']}", color=discord.Color.blue())
+        embed.add_field(name="Added By", value=movie['added_by'], inline=True)
+        embed.add_field(name="Current Votes", value=f"{votes} {vote_text}", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+
     @movie_group.command(name="spin", description="Spin the wheel to randomly select a movie!")
     async def spin(self, interaction: discord.Interaction):
         guild_id = interaction.guild_id
