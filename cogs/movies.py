@@ -36,7 +36,9 @@ class MovieCog(commands.Cog):
         embed = discord.Embed(title="🍿 Current Movie Pool", color=discord.Color.gold())
         movie_list = ""
         for i, m in enumerate(movies):
-            movie_list += f"**{i+1}.** {m['title']} *(Added by {m['added_by']})*\n"
+            votes = m.get('votes', 1)
+            vote_text = "vote" if votes == 1 else "votes"
+            movie_list += f"**{i+1}.** {m['title']} *(Added by {m['added_by']}) - {votes} {vote_text}*\n"
         
         embed.description = movie_list
         await interaction.response.send_message(embed=embed)
@@ -68,19 +70,25 @@ class MovieCog(commands.Cog):
         await interaction.response.send_message("🎰 **Spinning the Movie Roulette...**")
         msg = await interaction.original_response()
 
+        # Weighted selection logic
+        weights = [m.get('votes', 1) for m in movies]
+        winner = random.choices(movies, weights=weights, k=1)[0]
+
         # The spinning animation loop
         spin_cycles = 10
-        delay = 0.1
+        delay = 0.05
+        friction = 1.25
         
-        for i in range(spin_cycles):
+        for i in range(spin_cycles - 1):
             random_movie = random.choice(movies)
             await msg.edit(content=f"🎰 **Spinning the Movie Roulette...**\n\n> 🔄 *{random_movie['title']}*")
             await asyncio.sleep(delay)
-            delay += 0.05 # Slow down the spin gradually
+            delay *= friction # Slow down the spin gradually
 
         # Final Selected Movie
-        winner = random.choice(movies)
-        await msg.edit(content=f"🎯 **The wheel has stopped!**\n\n🍿 **Tonight's Movie:**\n# {winner['title']}\n*(Suggested by {winner['added_by']})*")
+        votes = winner.get('votes', 1)
+        vote_text = "vote" if votes == 1 else "votes"
+        await msg.edit(content=f"🎯 **The wheel has stopped!**\n\n🍿 **Tonight's Movie:**\n# {winner['title']}\n*(Suggested by {winner['added_by']}) - Won with {votes} {vote_text}!*")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(MovieCog(bot))

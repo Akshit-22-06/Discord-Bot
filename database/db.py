@@ -29,6 +29,7 @@ class Movie(Base):
     guild_id = Column(Integer)
     title = Column(String)
     added_by = Column(String)
+    votes = Column(Integer, default=1)
 
 def init_db():
     Base.metadata.create_all(engine)
@@ -49,15 +50,22 @@ def get_past_stories():
 
 def add_movie(guild_id: int, title: str, added_by: str):
     session = SessionLocal()
-    new_movie = Movie(guild_id=guild_id, title=title, added_by=added_by)
-    session.add(new_movie)
+    # Case-insensitive search for existing movie
+    existing_movie = session.query(Movie).filter(Movie.guild_id == guild_id, Movie.title.ilike(title)).first()
+    
+    if existing_movie:
+        existing_movie.votes += 1
+    else:
+        new_movie = Movie(guild_id=guild_id, title=title, added_by=added_by, votes=1)
+        session.add(new_movie)
+        
     session.commit()
     session.close()
 
 def get_movies(guild_id: int):
     session = SessionLocal()
     movies = session.query(Movie).filter_by(guild_id=guild_id).all()
-    result = [{"id": m.id, "title": m.title, "added_by": m.added_by} for m in movies]
+    result = [{"id": m.id, "title": m.title, "added_by": m.added_by, "votes": m.votes} for m in movies]
     session.close()
     return result
 
